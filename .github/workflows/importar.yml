@@ -1,0 +1,107 @@
+name: Importar zip para pastas
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Substituir os arquivos pelo zip mais recente
+        run: |
+          cat > /tmp/importar.py <<'PY'
+          """Importa um zip para o repositório SUBSTITUINDO os arquivos que já existem (sem criar pasta nova)."""
+          import os, sys, zipfile, shutil, tempfile
+
+          repo = os.path.abspath(sys.argv[1])
+          zpath = os.path.abspath(sys.argv[2])
+          SKIP_DIRS = {'.git', '__MACOSX'}
+          SKIP_PREFIX = ('.github/workflows/',)   # o GitHub não deixa a Action alterar workflows
+
+          def walk(base):
+              for d, dirs, files in os.walk(base):
+                  dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
+                  for f in files:
+                      yield os.path.relpath(os.path.join(d, f), base).replace(os.sep, '/')
+
+          # 1) raiz real do projeto: onde está o settings.gradle(.kts) mais próximo da raiz do repositório
+          root = repo
+          best = None
+          for p in walk(repo):
+              if os.path.basename(p) in ('settings.gradle.kts', 'settings.gradle'):
+                  depth = p.count('/')
+                  if best is None or depth < best[0]:
+                      best = (depth, os.path.dirname(p))
+          if best is not None:
+              root = os.path.join(repo, best[1]) if best[1] else repo
+          print('Raiz do projeto:', os.path.relpath(root, repo) if root != repo else '(raiz do repositório)')
+
+          # 2) extrai o zip
+          tmp = tempfile.mkdtemp()
+          with zipfile.ZipFile(zpath) as z:
+              z.extractall(tmp)
+          incoming = [p for p in walk(tmp) if not p.endswith('.DS_Store')]
+          if not incoming:
+              sys.exit('O zip está vazio.')
+
+          existing = set(walk(root))
+          tops = {p.split('/')[0] for p in incoming}
+          def strip(p): return p.split('/', 1)[1] if '/' in p else p
+
+          # 3) com ou sem a pasta de embalagem do zip? escolhe a leitura que mais casa com arquivos já existentes
+          as_is = sum(1 for p in incoming if p in existing)
+          stripped_paths = [strip(p) for p in incoming]
+          stripped = sum(1 for p in stripped_paths if p in existing)
+          wrapper = len(tops) == 1 and (stripped > as_is or (stripped == as_is and list(tops)[0] not in {t.split('/')[0] for t in existing}))
+          print('Pasta de embalagem do zip removida:', 'sim' if wrapper else 'não')
+          pairs = [(p, strip(p) if wrapper else p) for p in incoming]
+
+          # 4) para cada arquivo: substitui o existente; se o caminho exato não existe, acha o mesmo arquivo em outro lugar
+          by_tail = {}
+          for e in existing:
+              by_tail.setdefault(os.path.basename(e), []).append(e)
+
+          def find_existing(rel):
+              if rel in existing:
+                  return rel
+              parts = rel.split('/')
+              # mesmo nome de arquivo cujo caminho termina igual (ex.: pastas a mais no repositório)
+              for n in range(len(parts) - 1, 0, -1):
+                  tail = '/'.join(parts[-n:])
+                  hits = [e for e in by_tail.get(parts[-1], []) if e == tail or e.endswith('/' + tail)]
+                  if len(hits) == 1:
+                      return hits[0]
+              return None
+
+          replaced, created, skipped = [], [], []
+          for src, rel in pairs:
+              if any(rel.startswith(s) for s in SKIP_PREFIX):
+                  skipped.append(rel); continue
+              target = find_existing(rel)
+              is_new = target is None
+              target = target or rel
+              dest = os.path.join(root, target)
+              os.makedirs(os.path.dirname(dest), exist_ok=True)
+              shutil.copyfile(os.path.join(tmp, src), dest)
+              (created if is_new else replaced).append(target)
+
+          print(f'\nSubstituídos ({len(replaced)}):'); [print('  ~', x) for x in sorted(replaced)]
+          print(f'Criados ({len(created)}):');       [print('  +', x) for x in sorted(created)]
+          if skipped: print(f'Ignorados ({len(skipped)}):'); [print('  -', x) for x in sorted(skipped)]
+          shutil.rmtree(tmp, ignore_errors=True)
+          PY
+          # zip mais recente enviado ao repositório (pela data do commit, em qualquer pasta)
+          ZIP=$(git ls-files '*.zip' | while read -r f; do echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-)
+          if [ -z "$ZIP" ]; then echo "Nenhum .zip no repositório. Envie o zip primeiro."; exit 1; fi
+          echo "Zip usado: $ZIP"
+          python3 /tmp/importar.py . "$ZIP"
+          git rm -f -q "$ZIP"
+      - name: Salvar no repositório
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Importar projeto do zip" || echo "nada para salvar"
+          git push
