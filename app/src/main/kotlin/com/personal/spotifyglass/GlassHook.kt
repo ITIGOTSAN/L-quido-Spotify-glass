@@ -2,15 +2,29 @@ package com.personal.spotifyglass
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import java.util.WeakHashMap
 
 const val TAG = "SpotifyGlass"
+const val DEBUG_TOASTS = true
+
+private val shown = HashSet<String>()
+
+/** Aviso na tela (uma vez por chave) para depurar sem computador. */
+fun debugToast(ctx: Context, key: String, msg: String) {
+    Log.i(TAG, msg)
+    if (!DEBUG_TOASTS || !shown.add(key)) return
+    Handler(Looper.getMainLooper()).post {
+        Toast.makeText(ctx.applicationContext ?: ctx, "SpotifyGlass: $msg", Toast.LENGTH_LONG).show()
+    }
+}
 
 /** Entrada do modulo (API moderna libxposed). Listada em META-INF/xposed/java_init.list. */
 class GlassHook : XposedModule() {
@@ -54,12 +68,14 @@ object Installer {
         if (done) return
         done = true
         Log.i(TAG, "callbacks registrados")
+        debugToast(app, "loaded", "modulo carregado")
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 try {
                     overlays.getOrPut(activity) { Overlay(activity) }.start()
                 } catch (t: Throwable) {
                     Log.e(TAG, "erro no onResume", t)
+                    debugToast(activity, "err_resume", "erro: ${t.javaClass.simpleName} ${t.message}")
                 }
             }
             override fun onActivityCreated(a: Activity, s: Bundle?) {}

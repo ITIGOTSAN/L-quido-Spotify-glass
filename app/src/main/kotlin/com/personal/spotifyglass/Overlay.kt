@@ -78,10 +78,16 @@ class Overlay(private val a: Activity) : LifecycleOwner, SavedStateRegistryOwner
         if (started) { sync(); return }
         started = true
         val vto = a.window.decorView.viewTreeObserver
-        vto.addOnGlobalLayoutListener { runCatching { sync() }.onFailure { Log.e(TAG, "sync", it) } }
+        vto.addOnGlobalLayoutListener { runCatching { sync() }.onFailure {
+            Log.e(TAG, "sync", it)
+            debugToast(a, "err_sync", "erro: ${it.javaClass.simpleName} ${it.message}")
+        } }
         vto.addOnScrollChangedListener { tick.intValue++ }
         sync()
         handler.postDelayed(refreshMini, 300)
+        handler.postDelayed({
+            if (navRef?.get() == null) debugToast(a, "nonav", "barra NAO encontrada nesta tela (id navigation_bar)")
+        }, 4000)
     }
 
     private fun id(name: String) = a.resources.getIdentifier(name, "id", a.packageName)
@@ -95,7 +101,7 @@ class Overlay(private val a: Activity) : LifecycleOwner, SavedStateRegistryOwner
             val i = id("navigation_bar")
             nav = if (i != 0) decor.findViewById(i) else null
             navRef = nav?.let { WeakReference(it) }
-            if (nav != null) Log.i(TAG, "encontrado: navigation_bar")
+            if (nav != null) debugToast(a, "nav", "barra encontrada")
         }
         if (nav == null || !nav.isShown || nav.width == 0 || nav.height == 0) {
             cv?.visibility = View.GONE
@@ -107,6 +113,7 @@ class Overlay(private val a: Activity) : LifecycleOwner, SavedStateRegistryOwner
 
         val found = findTabs(nav)
         if (found.size < 2) {
+            debugToast(a, "tabs_few", "itens da barra encontrados: ${found.size} (precisa de 2+)")
             cv?.visibility = View.GONE
             nav.alpha = 1f
             if (!dumped) { dumped = true; dump(nav, 0) }
@@ -143,6 +150,7 @@ class Overlay(private val a: Activity) : LifecycleOwner, SavedStateRegistryOwner
         view.visibility = View.VISIBLE
         view.bringToFront()
         nav.alpha = 0f
+        debugToast(a, "overlay", "overlay da barra ativo (${found.size} abas)")
     }
 
     /** Itens clicaveis da barra nativa, da esquerda para a direita. */
@@ -194,7 +202,7 @@ class Overlay(private val a: Activity) : LifecycleOwner, SavedStateRegistryOwner
             val i = id("now_playing_bar")
             m = if (i != 0) decor.findViewById(i) else null
             miniRef = m?.let { WeakReference(it) }
-            if (m != null) Log.i(TAG, "encontrado: now_playing_bar")
+            if (m != null) debugToast(a, "mini", "mini-player encontrado")
         }
         return m
     }
