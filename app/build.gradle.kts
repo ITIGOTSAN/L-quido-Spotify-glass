@@ -38,5 +38,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("io.github.kyant0:shapes:1.2.1")
     implementation("io.github.kyant0:backdrop:2.0.1")
-    compileOnly("de.robv.android.xposed:api:82")
+    compileOnly("io.github.libxposed:api:102.0.0")
 }

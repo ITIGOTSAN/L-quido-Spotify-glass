@@ -1,6 +1,6 @@
 # Spotify Liquid Glass (uso pessoal)
 
-Modulo Xposed (API legada) que desenha a barra do Spotify com a biblioteca
+Modulo Xposed (API moderna libxposed 101/102) que desenha a barra do Spotify com a biblioteca
 Backdrop / AndroidLiquidGlass (Kyant0, Apache-2.0 - ver LICENSE-AndroidLiquidGlass).
 
 Como funciona: a barra nativa `navigation_bar` fica invisivel (so mantem layout e cliques) e uma
